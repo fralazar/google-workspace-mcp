@@ -1,11 +1,13 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-03-20
 deciders:
   - aaronsb
 related:
   - ADR-200
 ---
+
+> **Status: Superseded** — Replaced by service account domain-wide delegation with JWT signing (2026-04). This ADR described a per-user OAuth2 authorization code flow with browser-based consent, localhost callback server, and per-account refresh token management. The project now uses a Google service account with domain-wide delegation, where the server signs JWTs to impersonate domain users without any browser interaction or per-user OAuth tokens. The original content is preserved below as historical reference.
 
 # ADR-201: Own OAuth flow with per-account token service
 

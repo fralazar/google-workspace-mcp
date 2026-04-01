@@ -16,19 +16,17 @@ Thank you for your interest in contributing to the Google Workspace MCP project!
    mkdir -p ~/.mcp/google-workspace-mcp
    ```
 
-4. Set up Google Cloud OAuth credentials:
-   - Create OAuth 2.0 credentials in Google Cloud Console
-   - **Important**: Choose "Web application" type (not Desktop)
-   - Set redirect URI to: `http://localhost:8080`
-   - Note your Client ID and Client Secret
+4. Set up a Google Cloud service account with domain-wide delegation:
+   - Create a service account in Google Cloud Console
+   - Enable domain-wide delegation for the service account
+   - Download the JSON key file
+   - Place the key file in your config directory (e.g., `~/.mcp/google-workspace-mcp/service-account-key.json`)
 
-5. Run the container with your Google API credentials:
+5. Run the container with your service account key:
    ```bash
    docker run -i --rm \
-     -p 8080:8080 \
      -v ~/.mcp/google-workspace-mcp:/app/config \
-     -e GOOGLE_CLIENT_ID=your_client_id \
-     -e GOOGLE_CLIENT_SECRET=your_client_secret \
+     -e GOOGLE_SERVICE_ACCOUNT_KEY=/app/config/service-account-key.json \
      -e LOG_MODE=strict \
      google-workspace-mcp:local
    ```
@@ -36,19 +34,16 @@ Thank you for your interest in contributing to the Google Workspace MCP project!
 Note: For local development, you can also mount the source code directory:
 ```bash
 docker run -i --rm \
-  -p 8080:8080 \
   -v ~/.mcp/google-workspace-mcp:/app/config \
   -v $(pwd)/src:/app/src \
-  -e GOOGLE_CLIENT_ID=your_client_id \
-  -e GOOGLE_CLIENT_SECRET=your_client_secret \
+  -e GOOGLE_SERVICE_ACCOUNT_KEY=/app/config/service-account-key.json \
   -e LOG_MODE=strict \
   google-workspace-mcp:local
 ```
 
 **Key Development Notes**:
-- Port mapping `-p 8080:8080` is required for OAuth callback handling
-- OAuth credentials must be "Web application" type with `http://localhost:8080` redirect URI
-- The callback server automatically starts when the OAuth client initializes
+- `GOOGLE_SERVICE_ACCOUNT_KEY` can be a path to the JSON key file or inline JSON
+- No browser-based OAuth flow or callback server is needed
 
 ## Development Workflow
 

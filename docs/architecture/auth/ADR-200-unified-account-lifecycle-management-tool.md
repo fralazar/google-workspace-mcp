@@ -1,11 +1,13 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-03-14
 deciders:
   - aaronsb
 related:
   - ADR-201
 ---
+
+> **Status: Superseded** — Replaced by service account domain-wide delegation (2026-04). This ADR was designed around individual per-user OAuth via `gws auth login` and browser-based consent flows. The project now uses a Google service account with domain-wide delegation, eliminating the need for per-user OAuth, browser callbacks, and `gws` credential management. The original content is preserved below as historical reference.
 
 # ADR-200: Unified account lifecycle management tool
 

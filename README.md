@@ -69,7 +69,7 @@ Download the `.mcpb` bundle for your platform from the [latest release](https://
 | Linux ARM64 | `google-workspace-mcp-linux-arm64.mcpb` |
 | Windows x64 | `google-workspace-mcp-windows-x64.mcpb` |
 
-In Claude Desktop, drag the `.mcpb` file into the app — it will prompt you for your Google OAuth credentials, then you're ready to go. Other MCP clients that support `.mcpb` extensions can install it the same way. The bundle includes everything: the server, the gws binary, and all dependencies.
+In Claude Desktop, drag the `.mcpb` file into the app. Other MCP clients that support `.mcpb` extensions can install it the same way. The bundle includes everything: the server, the gws binary, and all dependencies.
 
 ### Claude Code / npm
 
@@ -86,14 +86,24 @@ npx @aaronsb/google-workspace-mcp
 ### Prerequisites
 
 1. **Node.js** 18+
-2. **Google Cloud OAuth credentials** — create at [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials):
-   - Create an OAuth 2.0 Client ID (Desktop application)
-   - Enable the APIs you want (Gmail, Calendar, Drive, Sheets, etc.)
-
-3. Set environment variables:
+2. **Google Cloud service account with domain-wide delegation:**
+   - Create a service account in [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts)
+   - Enable domain-wide delegation on the service account
+   - Download the JSON key file
+   - In **Google Admin Console** (admin.google.com), go to Security → API controls → Domain-wide delegation and add the service account's client ID with these scopes:
+     ```
+     https://www.googleapis.com/auth/gmail.readonly
+     https://www.googleapis.com/auth/drive.readonly
+     https://www.googleapis.com/auth/calendar.readonly
+     https://www.googleapis.com/auth/spreadsheets.readonly
+     https://www.googleapis.com/auth/documents.readonly
+     https://www.googleapis.com/auth/tasks.readonly
+     https://www.googleapis.com/auth/presentations.readonly
+     https://www.googleapis.com/auth/meetings.space.readonly
+     ```
+3. Set the environment variable (path to key file or inline JSON):
    ```bash
-   export GOOGLE_CLIENT_ID="your-client-id"
-   export GOOGLE_CLIENT_SECRET="your-client-secret"
+   export GOOGLE_SERVICE_ACCOUNT_KEY="/path/to/service-account-key.json"
    ```
 
 ## MCP Client Configuration
@@ -109,8 +119,7 @@ Add to `claude_desktop_config.json`:
       "command": "npx",
       "args": ["@aaronsb/google-workspace-mcp"],
       "env": {
-        "GOOGLE_CLIENT_ID": "your-client-id",
-        "GOOGLE_CLIENT_SECRET": "your-client-secret"
+        "GOOGLE_SERVICE_ACCOUNT_KEY": "/path/to/service-account-key.json"
       }
     }
   }
@@ -128,28 +137,38 @@ Add to `.mcp.json`:
       "command": "npx",
       "args": ["@aaronsb/google-workspace-mcp"],
       "env": {
-        "GOOGLE_CLIENT_ID": "your-client-id",
-        "GOOGLE_CLIENT_SECRET": "your-client-secret"
+        "GOOGLE_SERVICE_ACCOUNT_KEY": "/path/to/service-account-key.json"
       }
     }
   }
 }
 ```
 
+### Docker
+
+Build and run via Docker Compose, or use the image directly in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "google-workspace": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "--network=host", "google-workspace-mcp"]
+    }
+  }
+}
+```
+
+The `docker-compose.yaml` mounts the key file as a read-only secret and sets `GOOGLE_SERVICE_ACCOUNT_KEY` automatically.
+
 ## Usage
 
-Add an account (opens browser for OAuth):
+Use any tool with a domain user's email — the service account impersonates the user automatically:
 
 ```
-manage_accounts { "operation": "authenticate" }
-```
-
-Then use any tool with your account email:
-
-```
-manage_email    { "operation": "triage", "email": "you@gmail.com" }
-manage_calendar { "operation": "agenda", "email": "you@gmail.com" }
-manage_drive    { "operation": "search", "email": "you@gmail.com", "query": "quarterly report" }
+manage_email    { "operation": "triage", "email": "user@yourdomain.com" }
+manage_calendar { "operation": "agenda", "email": "user@yourdomain.com" }
+manage_drive    { "operation": "search", "email": "user@yourdomain.com", "query": "quarterly report" }
 ```
 
 ### Multi-Step Workflows
@@ -179,14 +198,12 @@ New operations get default formatting automatically. Add a patch only when you n
 
 ## Data Storage
 
-Follows XDG Base Directory Specification:
-
 | Data | Location |
 |------|----------|
-| Account registry | `~/.config/google-workspace-mcp/accounts.json` |
-| Credentials | `~/.local/share/google-workspace-mcp/credentials/` |
+| Service account key | Provided via `GOOGLE_SERVICE_ACCOUNT_KEY` env var (file path or inline JSON) |
+| Access tokens | Cached in-memory only — no credential files written to disk |
 
-Credentials are per-account files with standard OAuth tokens. No secrets are stored in the project directory.
+No secrets are stored in the project directory. Tokens are minted on demand via JWT exchange with Google's token endpoint and held in memory for the lifetime of the process.
 
 ## License
 

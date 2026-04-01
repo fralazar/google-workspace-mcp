@@ -3,6 +3,8 @@
 **Date:** 2026-03-13
 **Status:** Discussion draft — assumptions validated
 
+> **Note (2026-04):** The authentication model described in this document (per-user OAuth flow, browser invocation, `GOOGLE_WORKSPACE_CLI_CLIENT_ID`/`GOOGLE_WORKSPACE_CLI_CLIENT_SECRET`, localhost callback server, `gws auth login`) has been replaced by service account domain-wide delegation with JWT signing. The architectural pivot to use `gws` as an execution engine remains valid, but all OAuth-specific auth sections below are historical.
+
 ## Problem
 
 Google shipped `@googleworkspace/cli` (gws) — a Rust CLI that dynamically discovers and wraps every Workspace API via Google's Discovery Service. It includes 24 helper commands, structured output, encrypted credential storage, and auto-pagination. At v0.13.1 it's actively maintained under Apache-2.0.

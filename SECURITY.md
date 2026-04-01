@@ -41,7 +41,7 @@ When you report a vulnerability:
 When using Google Workspace MCP:
 
 1. Always use the latest version
-2. Keep your OAuth credentials secure
+2. Keep your service account key secure
 3. Follow our security guidelines in the documentation
 4. Implement proper access controls
 5. Regularly audit your token usage
@@ -52,7 +52,7 @@ When using Google Workspace MCP:
 Google Workspace MCP includes several security features:
 
 1. Secure token storage
-2. OAuth 2.0 implementation
+2. Service account authentication with domain-wide delegation
 3. Rate limiting
 4. Input validation
 5. Secure credential handling

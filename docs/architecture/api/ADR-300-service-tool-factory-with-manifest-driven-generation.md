@@ -178,8 +178,8 @@ src/
 
 The factory architecture is designed for distribution as a standalone `.mcpb` package (Claude Desktop, other agent marketplaces). Key packaging concerns:
 
-- **Credential storage** — OAuth tokens and client secrets use the MCP `sensitive: true` spec flag. The host framework manages secure storage; we declare what's sensitive, we don't roll our own encrypted store.
-- **XDG paths** — Account registry and exported credentials live at well-known user-profile paths (`~/.config/google-workspace-mcp/`, `~/.local/share/google-workspace-mcp/`). The package ships no secrets.
+- **Credential storage** — The service account key file is referenced via configuration. The MCP `sensitive: true` spec flag marks credential parameters. The host framework manages secure storage; we declare what's sensitive, we don't roll our own encrypted store. *(Note: this section originally referenced per-user OAuth tokens and client secrets; the project now uses service account domain-wide delegation.)*
+- **XDG paths** — Account registry and configuration live at well-known user-profile paths (`~/.config/google-workspace-mcp/`, `~/.local/share/google-workspace-mcp/`). The package ships no secrets.
 - **gws as bundled dependency** — The gws binary is an npm dependency, resolved from `node_modules/.bin/`. The .mcpb packages it; the user doesn't install gws separately.
 - **First-run setup** — `manage_accounts` operation `authenticate` handles the full OAuth browser flow. No CLI prerequisite for end users.
 - **Service activation** — The manifest declares all supported services. Agent frameworks can enable/disable tools individually (1:1 tool-to-service). Users choose what Google services to expose.
