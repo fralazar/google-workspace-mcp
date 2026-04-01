@@ -12,6 +12,7 @@ import { GwsError, GwsExitCode } from '../executor/errors.js';
 import { nextSteps } from './formatting/next-steps.js';
 import { manifest } from '../factory/registry.js';
 import { checkWorkspaceStatus } from '../executor/workspace.js';
+import { loadServiceAccountKey } from '../accounts/service-account.js';
 
 import {
   configurePolicies,
@@ -212,32 +213,13 @@ export function createServer(): Server {
   return server;
 }
 
-/** Warm up token cache on startup — prefetch access tokens for all accounts. */
-async function warmupAccounts(): Promise<void> {
+/** Validate service account key at startup. */
+function validateServiceAccount(): void {
   try {
-    const { listAccounts } = await import('../accounts/registry.js');
-    const { hasCredential } = await import('../accounts/credentials.js');
-    const { warmTokenCache } = await import('../accounts/token-service.js');
-    const accounts = await listAccounts();
-    if (accounts.length === 0) {
-      log('startup: no accounts configured');
-      return;
-    }
-    const withCreds: string[] = [];
-    for (const account of accounts) {
-      if (await hasCredential(account.email)) {
-        withCreds.push(account.email);
-      } else {
-        log(`startup: ${account.email} — no credential file`);
-      }
-    }
-    if (withCreds.length > 0) {
-      log(`startup: warming tokens for ${withCreds.length} account(s)`);
-      await warmTokenCache(withCreds);
-      log(`startup: token warmup complete`);
-    }
+    const key = loadServiceAccountKey();
+    log(`startup: service account mode (${key.client_email})`);
   } catch (err) {
-    log(`startup: warmup failed (${(err as Error).message})`);
+    log(`startup: service account validation failed — ${(err as Error).message}`);
   }
 }
 
@@ -245,6 +227,5 @@ export async function startServer(): Promise<void> {
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // Non-blocking warmup — don't delay MCP handshake
-  warmupAccounts().catch(() => {});
+  validateServiceAccount();
 }

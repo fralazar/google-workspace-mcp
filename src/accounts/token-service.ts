@@ -1,6 +1,5 @@
-import { readCredential } from './credentials.js';
+import { mintToken } from './service-account.js';
 
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const EXPIRY_BUFFER = 60_000; // refresh 1 minute before expiry
 
 interface CachedToken {
@@ -26,10 +25,10 @@ export class TokenRefreshError extends Error {
 }
 
 /**
- * Get a valid access token for an account.
+ * Get a valid access token for an impersonated user.
  *
- * Returns from cache if >60s remaining, otherwise exchanges
- * the stored refresh token for a fresh access token.
+ * Returns from cache if >60s remaining, otherwise mints a new token
+ * via the service account JWT flow.
  */
 export async function getAccessToken(email: string): Promise<string> {
   const cached = cache.get(email);
@@ -41,7 +40,7 @@ export async function getAccessToken(email: string): Promise<string> {
   const pending = inflight.get(email);
   if (pending) return pending;
 
-  const promise = refreshAccessToken(email);
+  const promise = refreshToken(email);
   inflight.set(email, promise);
   try {
     return await promise;
@@ -50,51 +49,24 @@ export async function getAccessToken(email: string): Promise<string> {
   }
 }
 
-async function refreshAccessToken(email: string): Promise<string> {
-  const credential = await readCredential(email);
+async function refreshToken(email: string): Promise<string> {
+  try {
+    const { access_token, expires_in } = await mintToken(email);
 
-  const response = await fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: credential.client_id,
-      client_secret: credential.client_secret,
-      refresh_token: credential.refresh_token,
-      grant_type: 'refresh_token',
-    }),
-  });
+    cache.set(email, {
+      accessToken: access_token,
+      expiresAt: Date.now() + (expires_in * 1000),
+    });
 
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-    const googleError = body.error as string | undefined;
-
-    if (response.status === 400 && googleError === 'invalid_grant') {
-      cache.delete(email);
-      throw new TokenRefreshError(
-        `Refresh token revoked or expired for ${email}. Re-authenticate with manage_accounts → authenticate.`,
-        email,
-        googleError,
-      );
-    }
-
+    return access_token;
+  } catch (err) {
+    cache.delete(email);
     throw new TokenRefreshError(
-      `Token refresh failed for ${email} (${response.status}): ${JSON.stringify(body)}`,
+      `Token mint failed for ${email}: ${(err as Error).message}`,
       email,
-      googleError,
+      (err as Error).message,
     );
   }
-
-  const data = await response.json() as {
-    access_token: string;
-    expires_in: number;
-  };
-
-  cache.set(email, {
-    accessToken: data.access_token,
-    expiresAt: Date.now() + (data.expires_in * 1000),
-  });
-
-  return data.access_token;
 }
 
 /** Evict a cached token — forces next getAccessToken to refresh. */

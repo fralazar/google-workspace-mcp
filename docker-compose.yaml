@@ -1,0 +1,13 @@
+services:
+  google-workspace-mcp:
+    build: .
+    image: google-workspace-mcp
+    environment:
+      - GOOGLE_SERVICE_ACCOUNT_KEY=/run/secrets/sa-key.json
+    stdin_open: true
+    volumes:
+      - ./service-account-key.json:/run/secrets/sa-key.json:ro
+      - gws-data:/root/.config/gws
+
+volumes:
+  gws-data:

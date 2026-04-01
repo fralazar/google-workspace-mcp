@@ -1,5 +1,4 @@
-import { listAccounts, removeAccount, authenticateAndAddAccount, type Account } from '../../accounts/registry.js';
-import { checkAccountStatus, reauthWithServices } from '../../accounts/auth.js';
+import { loadServiceAccountKey } from '../../accounts/service-account.js';
 import { getAccessToken, invalidateToken } from '../../accounts/token-service.js';
 import { nextSteps } from '../formatting/next-steps.js';
 import { getActivePolicies } from '../../factory/safety.js';
@@ -7,117 +6,56 @@ import { manifest } from '../../factory/registry.js';
 import { checkWorkspaceStatus } from '../../executor/workspace.js';
 import type { HandlerResponse } from '../handler.js';
 
-interface EnrichedAccount extends Account {
-  hasCredential: boolean;
-}
-
-function formatAccountList(accounts: EnrichedAccount[]): { text: string; refs: Record<string, unknown> } {
-  const lines = accounts.map(a => {
-    const cred = a.hasCredential ? '[x]' : '[ ]';
-    const desc = a.description ? ` — ${a.description}` : '';
-    return `${cred} ${a.email} (${a.category})${desc}`;
-  });
-
-  return {
-    text: `## Accounts (${accounts.length})\n\n${lines.join('\n')}`,
-    refs: {
-      count: accounts.length,
-      accounts: accounts.map(a => a.email),
-      email: accounts[0]?.email,
-    },
-  };
-}
-
-function formatStatus(status: { email: string; tokenValid: boolean; scopes: string[]; scopeCount: number; hasRefreshToken: boolean }): { text: string; refs: Record<string, unknown> } {
-  const valid = status.tokenValid ? '[x] Token valid' : '[ ] Token invalid';
-  const refresh = status.hasRefreshToken ? '[x] Has refresh token' : '[ ] No refresh token';
-  const scopeList = status.scopes.length > 0
-    ? status.scopes.map(s => `- ${s.replace('https://www.googleapis.com/auth/', '')}`).join('\n')
-    : '(no scopes)';
-
-  return {
-    text: [
-      `## Account Status: ${status.email}`,
-      '',
-      valid,
-      refresh,
-      `**Scopes (${status.scopeCount}):**`,
-      scopeList,
-    ].join('\n'),
-    refs: {
-      email: status.email,
-      tokenValid: status.tokenValid,
-      scopeCount: status.scopeCount,
-      scopes: status.scopes,
-    },
-  };
-}
-
 export async function handleAccounts(params: Record<string, unknown>): Promise<HandlerResponse> {
   const operation = params.operation as string;
+  const key = loadServiceAccountKey();
 
   switch (operation) {
     case 'list': {
-      process.stderr.write(`[gws-mcp] accounts.list: reading accounts file\n`);
-      const accounts = await listAccounts() as EnrichedAccount[];
-      process.stderr.write(`[gws-mcp] accounts.list: found ${accounts.length} accounts\n`);
-      if (accounts.length === 0) {
-        return {
-          text: 'No accounts configured.' + nextSteps('accounts', 'list_empty'),
-          refs: { count: 0 },
-        };
-      }
-      const formatted = formatAccountList(accounts);
       return {
-        text: formatted.text + nextSteps('accounts', 'list'),
-        refs: formatted.refs,
-      };
-    }
-
-    case 'authenticate': {
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-      if (!clientId || !clientSecret) {
-        throw new Error(
-          'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables are required. ' +
-          'Create OAuth credentials at https://console.cloud.google.com/apis/credentials',
-        );
-      }
-      const category = (params.category as string) || 'personal';
-      const description = params.description as string | undefined;
-      const result = await authenticateAndAddAccount(
-        clientId, clientSecret,
-        category as 'personal' | 'work' | 'other',
-        description,
-      );
-      const statusText = result.status === 'success'
-        ? `Account authenticated: **${result.account}**`
-        : `Authentication failed: ${result.error}`;
-      return {
-        text: statusText + nextSteps('accounts', 'authenticate'),
-        refs: { status: result.status, account: result.account, email: result.account },
-      };
-    }
-
-    case 'remove': {
-      const email = params.email as string;
-      if (!email) throw new Error('email is required for remove');
-      await removeAccount(email);
-      return {
-        text: `Account removed: ${email}` + nextSteps('accounts', 'remove'),
-        refs: { status: 'removed', email },
+        text: [
+          '## Service Account Mode',
+          '',
+          `**Service Account:** ${key.client_email}`,
+          `**Project:** ${key.project_id}`,
+          '',
+          'Domain-wide delegation is active. Any user in the domain can be impersonated by passing their email in tool calls.',
+        ].join('\n') + nextSteps('accounts', 'list'),
+        refs: {
+          mode: 'service_account',
+          serviceAccount: key.client_email,
+          projectId: key.project_id,
+        },
       };
     }
 
     case 'status': {
       const email = params.email as string;
       if (!email) throw new Error('email is required for status');
-      const status = await checkAccountStatus(email);
-      const formatted = formatStatus(status);
-      return {
-        text: formatted.text + nextSteps('accounts', 'status', { email }),
-        refs: formatted.refs,
-      };
+      try {
+        await getAccessToken(email);
+        return {
+          text: [
+            `## Account Status: ${email}`,
+            '',
+            '[x] Token valid — delegation working',
+            `**Service Account:** ${key.client_email}`,
+          ].join('\n') + nextSteps('accounts', 'status', { email }),
+          refs: { email, tokenValid: true, serviceAccount: key.client_email },
+        };
+      } catch (err) {
+        return {
+          text: [
+            `## Account Status: ${email}`,
+            '',
+            `[ ] Token failed: ${(err as Error).message}`,
+            '',
+            'Verify that domain-wide delegation is configured in Google Admin Console ' +
+            `for service account ${key.client_email} with the required scopes.`,
+          ].join('\n'),
+          refs: { email, tokenValid: false, error: (err as Error).message },
+        };
+      }
     }
 
     case 'refresh': {
@@ -128,26 +66,6 @@ export async function handleAccounts(params: Record<string, unknown>): Promise<H
       return {
         text: `Token refreshed for ${email}` + nextSteps('accounts', 'refresh', { email }),
         refs: { status: 'refreshed', email },
-      };
-    }
-
-    case 'scopes': {
-      const email = params.email as string;
-      const services = params.services as string;
-      if (!email) throw new Error('email is required for scopes');
-      if (!services) throw new Error('services is required for scopes (comma-separated: gmail,drive,calendar,sheets,etc.)');
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-      if (!clientId || !clientSecret) {
-        throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables are required');
-      }
-      const result = await reauthWithServices(clientId, clientSecret, services);
-      const statusText = result.status === 'success'
-        ? `Scopes updated for **${result.account}** with services: ${services}`
-        : `Scope update failed: ${result.error}`;
-      return {
-        text: statusText + nextSteps('accounts', 'scopes', { email }),
-        refs: { status: result.status, email: result.account, services },
       };
     }
 
@@ -162,14 +80,17 @@ export async function handleAccounts(params: Record<string, unknown>): Promise<H
 
       const parts: string[] = [];
 
-      // Services
       const totalOps = services.reduce((sum, s) => sum + s.operations.length, 0);
       parts.push(`## Services (${services.length} services, ${totalOps} operations)\n`);
       for (const s of services) {
         parts.push(`**${s.tool}** (${s.operations.length}): ${s.operations.join(', ')}`);
       }
 
-      // Safety policies
+      parts.push('');
+      parts.push('## Auth Mode\n');
+      parts.push(`**Mode:** Service Account (domain-wide delegation)`);
+      parts.push(`**Service Account:** ${key.client_email}`);
+
       parts.push('');
       if (policies.length > 0) {
         parts.push(`## Safety Policies (${policies.length} active)\n`);
@@ -180,7 +101,6 @@ export async function handleAccounts(params: Record<string, unknown>): Promise<H
         parts.push('## Safety Policies\n\nNo safety policies active — all operations are allowed.');
       }
 
-      // Workspace
       parts.push('');
       parts.push('## Workspace Directory\n');
       parts.push(`**Path:** ${workspace.path}`);
@@ -194,9 +114,33 @@ export async function handleAccounts(params: Record<string, unknown>): Promise<H
           activePolicies: policies.map(p => p.name),
           workspacePath: workspace.path,
           workspaceValid: workspace.valid,
+          authMode: 'service_account',
+          serviceAccount: key.client_email,
         },
       };
     }
+
+    case 'authenticate':
+      return {
+        text: 'Authentication is managed via service account domain-wide delegation. ' +
+              'No manual OAuth flow is needed. Use any domain email directly in tool calls.',
+        refs: { mode: 'service_account' },
+      };
+
+    case 'remove':
+      return {
+        text: 'Account removal is not applicable in service account mode. ' +
+              'Any domain user can be impersonated without registration.',
+        refs: { mode: 'service_account' },
+      };
+
+    case 'scopes':
+      return {
+        text: 'Scopes are configured in the Google Admin Console under ' +
+              'Security > API controls > Domain-wide delegation. ' +
+              `Service account client ID: ${key.client_id}`,
+        refs: { mode: 'service_account', clientId: key.client_id },
+      };
 
     default:
       throw new Error(`Unknown accounts operation: ${operation}`);

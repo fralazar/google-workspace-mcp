@@ -18,6 +18,7 @@ config/gauth.json
 config/accounts.json
 config/credentials/
 *.token.json
+service-account-key.json
 
 # IDE
 .idea/
